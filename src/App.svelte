@@ -40,6 +40,8 @@
         'ранобэ.рф': Ranobe,
         'xn--80ac9aeh6f.xn--p1ai': Ranobe,
         'ranobes.com': Ranobes,
+        'ranobes.top': Ranobes,
+        'ranobes.net': Ranobes,
         'tl.rulate.ru': Rulate,
         'jaomix.ru': Jaomix,
     }[location.hostname];

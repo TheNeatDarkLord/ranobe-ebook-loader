@@ -47,8 +47,10 @@ export default {
 		resolve({ dedupe: ['svelte'], browser: true }),
 		commonjs({ sourceMap: dev }),
 		typescript({
-			noUnusedLocals: !dev,
-			noUnusedParameters: !dev,
+			// Сгенерированные pug-шаблоны (build-артефакты) с текущей версией pug-code-gen
+			// объявляют неиспользуемые служебные переменные, поэтому проверку отключаем.
+			noUnusedLocals: false,
+			noUnusedParameters: false,
 			inlineSourceMap: dev,
 			inlineSources: dev,
 		}),
@@ -75,13 +77,15 @@ export default {
 		pug({ sourceMap: dev, pretty: dev }),
 		userscript({
 			meta: {
-				downloadURL: 'https://raw.githubusercontent.com/Taraflex/ranobe-ebook-loader/master/build/ranobe-ebook-loader.user.js',
+				downloadURL: 'https://raw.githubusercontent.com/TheNeatDarkLord/ranobe-ebook-loader/master/build/ranobe-ebook-loader.user.js',
 				icon: APP_ICON,
 				icon64: APP_ICON.replace('32.png', '64.png'),
 				match: [
 					'https://ранобэ.рф/*',
 					'https://xn--80ac9aeh6f.xn--p1ai/*',
 					'https://ranobes.com/ranobe/*',
+					'https://ranobes.top/ranobe/*',
+					'https://ranobes.net/ranobe/*',
 					'https://tl.rulate.ru/book/*',
 					'https://jaomix.ru/*'
 				],

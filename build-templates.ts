@@ -434,5 +434,6 @@ ${js}
 }`:
         "export default `" + new Function(...pugfns.map(f => f['name']), js)(...pugfns) + "`;";
 
-    writeFileSync(resolve(filename, '..', basename(filename, '.pug') + '.ts'), content);
+    // Сгенерированный pug-код не предназначен для строгой проверки типов.
+    writeFileSync(resolve(filename, '..', basename(filename, '.pug') + '.ts'), '// @ts-nocheck\n' + content);
 }

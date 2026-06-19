@@ -15,23 +15,49 @@ export class Ranobes extends Base {
     }
 
     async parts(ctrl: AbortController, cache: ImageInfoMap, mapper: (v: Chapter) => Promise<Chapter>) {
-        const bookAlias = this.bookAlias = (document.querySelector('.r-fullstory-chapters-foot > a:nth-child(3n)') as HTMLAnchorElement).href.split('/', 5).slice(-1)[0];
-        this.covers = [(document.querySelector('[itemprop="image"]') as HTMLAnchorElement).href];
-        this.d = dayjs(document.querySelector('[itemprop="datePublished"]').getAttribute('content'));
-        this.genres = Array.from(document.querySelectorAll('[itemprop="genre"] a'), a => a.textContent);
-        this.keywords = Array.from(document.querySelectorAll('[itemprop="keywords"] a'), a => a.textContent).join(', ');
+        const q = <T extends Element = HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector(sel) as T | null;
+        const qa = <T extends Element = HTMLElement>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll(sel)) as T[];
+        const meta = (name: string) => (q<HTMLMetaElement>(`meta[property="${name}"], meta[name="${name}"]`)?.content || '').trim();
+
+        // Идентификатор книги достаём из ссылки на оглавление вида /chapters/<alias>/.
+        // Раньше брался из микроразметки, которую сайт убрал в 2024-2025 годах.
+        const chaptersLink = (q<HTMLAnchorElement>('.r-fullstory-chapters-foot a[href*="/chapters/"]') || q<HTMLAnchorElement>('a[href*="/chapters/"]'))?.href || '';
+        const aliasMatch = chaptersLink.match(/\/chapters\/([^/]+)\//);
+        if (!aliasMatch) {
+            throw new Error('Не удалось найти ссылку на оглавление книги — возможно, снова изменилась вёрстка сайта.');
+        }
+        const bookAlias = this.bookAlias = aliasMatch[1];
+        const origin = new URL(chaptersLink).origin;
+
+        this.covers = [meta('og:image') || q<HTMLImageElement>('.poster img, .r-fullstory-poster img, .modal-image img')?.src].filter(Boolean) as string[];
+
+        const yearText = qa('.r-fullstory-spec li').find(li => /Год издания/i.test(li.textContent || ''))?.textContent || '';
+        const year = (yearText.match(/\d{4}/) || [])[0];
+        this.d = dayjs(year ? `${year}-01-01` : undefined);
+
+        this.genres = qa('#mc-fs-genre a').map(a => (a.textContent || '').trim()).filter(Boolean);
+        this.keywords = qa('#mc-fs-keyw a').map(a => (a.textContent || '').trim()).filter(Boolean).join(', ');
         this.title = this.extractTitle(document);
-        this.subtitle = document.querySelector('[itemprop="alternateName"]').textContent;
-        this.description = document.querySelector('[itemprop="description"]').innerHTML;
+        this.subtitle = (q('h1 .subtitle')?.textContent || '').trim();
+
+        const descEl = q('.r-desription .cont-text') || q('.r-desription');
+        if (descEl) {
+            const clone = descEl.cloneNode(true) as HTMLElement;
+            qa('style, script, button', clone).forEach(n => n.remove());
+            this.description = clone.innerHTML.trim();
+        } else {
+            this.description = meta('og:description');
+        }
+
         //todo this.lang = undefined;
-        this.authors = Array.from(document.querySelectorAll('[itemprop="creator"] a'), (a: HTMLAnchorElement) => ({ name: a.textContent, homePage: a.href }));
+        this.authors = qa<HTMLAnchorElement>('a[href*="/cloud/authors/"]').map(a => ({ name: (a.textContent || '').trim(), homePage: a.href }));
 
         const items: string[] = [];
 
         for (let pageIndex = 1; ; ++pageIndex) {
-            const doc = await loadDom(`https://ranobes.com/chapters/${bookAlias}/page/${pageIndex}/`, ctrl.signal);
+            const doc = await loadDom(`${origin}/chapters/${bookAlias}/page/${pageIndex}/`, ctrl.signal);
             if (!doc) break;
-            doc.querySelectorAll(`.cat_block a[href^="https://ranobes.com/chapters/${bookAlias}/"]`).forEach((a: HTMLAnchorElement) => items.push(a.href));
+            doc.querySelectorAll(`.cat_block a[href*="/chapters/${bookAlias}/"]`).forEach((a: HTMLAnchorElement) => items.push(a.href));
         }
 
         progress.total = items.length;
@@ -54,7 +80,7 @@ export class Ranobes extends Base {
                             title = this.extractTitle(doc);
                             const nav = doc.querySelector('.splitnewsnavigation');
                             if (nav) {
-                                nav.querySelectorAll(`a[href^="https://ranobes.com/chapters/${bookAlias}/"]`).forEach((a: HTMLAnchorElement) => pages.push(a.href));
+                                nav.querySelectorAll(`a[href*="/chapters/${bookAlias}/"]`).forEach((a: HTMLAnchorElement) => pages.push(a.href));
                             }
                         }
                         for (const img of getElements(content, 'img')) {
