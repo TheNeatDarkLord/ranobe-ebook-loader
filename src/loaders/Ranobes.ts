@@ -2,8 +2,8 @@ import dayjs from 'dayjs';
 import pMap from 'p-map';
 
 import { progress } from '../stores';
-import { downloadImage, getElements, ImageInfoMap, loadDom } from '../utils';
-import { Base, Chapter, concurrency } from './Base';
+import { delay, downloadImage, getElements, ImageInfoMap, loadDom } from '../utils';
+import { Base, Chapter } from './Base';
 
 export class Ranobes extends Base {
 
@@ -66,6 +66,9 @@ export class Ranobes extends Base {
             items.reverse(),
             async url => {
                 try {
+                    // Небольшая пауза между главами, чтобы не спровоцировать антибот сайта.
+                    await delay(300, ctrl.signal);
+
                     let text = '';
                     let title = '';
 
@@ -74,7 +77,10 @@ export class Ranobes extends Base {
                     for (const page of pages) {
                         const doc = await loadDom(page, ctrl.signal);
                         if (!doc) break;
-                        const content = doc.getElementById('arrticle')
+                        const content = doc.getElementById('arrticle');
+                        if (!content) {
+                            throw { name: 'ParseError', message: `Не удалось извлечь текст главы (нет #arrticle):\n${page}` };
+                        }
                         text += content.outerHTML;
                         if (!title) {
                             title = this.extractTitle(doc);
@@ -96,7 +102,9 @@ export class Ranobes extends Base {
                     throw e;
                 }
             },
-            { concurrency }
+            // Последовательно (не 5 параллельно): залп запросов провоцирует
+            // проверку Cloudflare, из-за чего главы возвращаются как заглушки.
+            { concurrency: 1 }
         );
     }
 }

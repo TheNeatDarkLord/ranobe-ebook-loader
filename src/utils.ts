@@ -64,18 +64,52 @@ export function patchApi(type: string) {
     );
 }
 
-export async function loadDom(url: string, signal: AbortSignal, method = 'GET', body?: any) {
-    const resp = await fetch(url, {
-        method,
-        credentials: 'include',
-        signal,
-        body,
-        headers: {
-            'x-requested-with': 'XMLHttpRequest',
-            'Content-Type': 'application/x-www-form-urlencoded',
-        }
+export function delay(ms: number, signal: AbortSignal) {
+    return new Promise<void>((resolve, reject) => {
+        if (signal.aborted) return reject({ name: 'AbortError' });
+        const onAbort = () => { clearTimeout(t); reject({ name: 'AbortError' }); };
+        const t = setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve(); }, ms);
+        signal.addEventListener('abort', onAbort, { once: true });
     });
-    return resp.status === 200 ? parse(await resp.text()) : null;
+}
+
+// И Cloudflare ("Just a moment..."), и собственный антибот ranobes ("Антибот /
+// подозрительную активность / Я не робот") отдают страницу-заглушку со статусом 200,
+// поэтому отличаем их по содержимому/заголовку, а не по коду ответа.
+const BOT_WALL = /<title>\s*(?:Just a moment|Подождите|Один момент)|\/cdn-cgi\/challenge-platform\/|Антибот|подозрительную активност/i;
+
+function isBotWall(resp: Response, text: string) {
+    return resp.headers.get('cf-mitigated') === 'challenge' || BOT_WALL.test(text);
+}
+
+export async function loadDom(url: string, signal: AbortSignal, method = 'GET', body?: any) {
+    for (let attempt = 0; ; ++attempt) {
+        const resp = await fetch(url, {
+            method,
+            credentials: 'include',
+            signal,
+            body,
+            headers: {
+                'x-requested-with': 'XMLHttpRequest',
+                'Content-Type': 'application/x-www-form-urlencoded',
+            }
+        });
+        if (resp.status !== 200) {
+            return null;
+        }
+        const text = await resp.text();
+        if (!isBotWall(resp, text)) {
+            return parse(text);
+        }
+        // Нарвались на антибот/Cloudflare — ждём и пробуем снова (адаптивный троттлинг).
+        if (attempt >= 5) {
+            throw {
+                name: 'BotWallError',
+                message: 'Сайт заблокировал фоновую загрузку (антибот / Cloudflare).\nОткройте любую главу книги в соседней вкладке, пройдите проверку «Я не робот» и запустите скачивание снова.\nЕсли повторяется — подождите 1-2 минуты: сайт временно ограничил частые запросы.'
+            };
+        }
+        await delay(2000 + attempt * 2000, signal);
+    }
 }
 
 export function response2err(r: { status: number, statusText: string }) {
