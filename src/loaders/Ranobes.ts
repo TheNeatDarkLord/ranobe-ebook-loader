@@ -3,6 +3,7 @@ import pMap from 'p-map';
 
 import { progress } from '../stores';
 import { delay, downloadImage, getElements, ImageInfoMap, loadDom } from '../utils';
+import { cacheGet, cacheSet } from '../cache';
 import { Base, Chapter } from './Base';
 
 export class Ranobes extends Base {
@@ -52,56 +53,71 @@ export class Ranobes extends Base {
         //todo this.lang = undefined;
         this.authors = qa<HTMLAnchorElement>('a[href*="/cloud/authors/"]').map(a => ({ name: (a.textContent || '').trim(), homePage: a.href }));
 
-        const items: string[] = [];
-
-        for (let pageIndex = 1; ; ++pageIndex) {
-            const doc = await loadDom(`${origin}/chapters/${bookAlias}/page/${pageIndex}/`, ctrl.signal);
-            if (!doc) break;
-            doc.querySelectorAll(`.cat_block a[href*="/chapters/${bookAlias}/"]`).forEach((a: HTMLAnchorElement) => items.push(a.href));
+        // Список глав кэшируем, чтобы при докачке не перечитывать оглавление заново.
+        const listKey = `${bookAlias}::list`;
+        let items: string[] = await cacheGet<string[]>(listKey) || [];
+        if (!items.length) {
+            for (let pageIndex = 1; ; ++pageIndex) {
+                const doc = await loadDom(`${origin}/chapters/${bookAlias}/page/${pageIndex}/`, ctrl.signal);
+                if (!doc) break;
+                doc.querySelectorAll(`.cat_block a[href*="/chapters/${bookAlias}/"]`).forEach((a: HTMLAnchorElement) => items.push(a.href));
+            }
+            items.reverse(); // от старых к новым (порядок чтения)
+            await cacheSet(listKey, items);
         }
 
         progress.total = items.length;
 
         return pMap(
-            items.reverse(),
+            items,
             async url => {
                 try {
-                    // Небольшая пауза между главами, чтобы не спровоцировать антибот сайта.
-                    await delay(300, ctrl.signal);
+                    // Докачка: уже скачанные главы берём из кэша мгновенно и без запроса —
+                    // так после блокировки антиботом перезапуск продолжает с места.
+                    const chKey = `${bookAlias}::${url}`;
+                    let raw = await cacheGet<Chapter>(chKey);
 
-                    let text = '';
-                    let title = '';
+                    if (!raw) {
+                        // Пауза ~1.5с между РЕАЛЬНЫМИ запросами: на меньшей паузе сайт включает антибот.
+                        await delay(1500, ctrl.signal);
 
-                    const pages = [url];
+                        let text = '';
+                        let title = '';
 
-                    for (const page of pages) {
-                        // Валидируем, что #arrticle реально с контентом — иначе антибот мог отдать
-                        // пустую оболочку, и loadDom повторит запрос (а не сохранит пустую главу).
-                        const doc = await loadDom(page, ctrl.signal, 'GET', undefined, d => {
-                            const a = d.getElementById('arrticle');
-                            return !!a && (a.children.length > 0 || !!a.textContent.trim());
-                        });
-                        if (!doc) break;
-                        const content = doc.getElementById('arrticle');
-                        if (!content) {
-                            throw { name: 'ParseError', message: `Не удалось извлечь текст главы (нет #arrticle):\n${page}` };
-                        }
-                        text += content.outerHTML;
-                        if (!title) {
-                            title = this.extractTitle(doc);
-                            const nav = doc.querySelector('.splitnewsnavigation');
-                            if (nav) {
-                                nav.querySelectorAll(`a[href*="/chapters/${bookAlias}/"]`).forEach((a: HTMLAnchorElement) => pages.push(a.href));
+                        const pages = [url];
+
+                        for (const page of pages) {
+                            // Валидируем, что #arrticle реально с контентом — иначе антибот мог отдать
+                            // пустую оболочку, и loadDom повторит запрос (а не сохранит пустую главу).
+                            const doc = await loadDom(page, ctrl.signal, 'GET', undefined, d => {
+                                const a = d.getElementById('arrticle');
+                                return !!a && (a.children.length > 0 || !!a.textContent.trim());
+                            });
+                            if (!doc) break;
+                            const content = doc.getElementById('arrticle');
+                            if (!content) {
+                                throw { name: 'ParseError', message: `Не удалось извлечь текст главы (нет #arrticle):\n${page}` };
                             }
+                            text += content.outerHTML;
+                            if (!title) {
+                                title = this.extractTitle(doc);
+                                const nav = doc.querySelector('.splitnewsnavigation');
+                                if (nav) {
+                                    nav.querySelectorAll(`a[href*="/chapters/${bookAlias}/"]`).forEach((a: HTMLAnchorElement) => pages.push(a.href));
+                                }
+                            }
+                            for (const img of getElements(content, 'img')) {
+                                await downloadImage(title, img.src, cache, ctrl);
+                            }
+                            doc.open();
                         }
-                        for (const img of getElements(content, 'img')) {
-                            await downloadImage(title, img.src, cache, ctrl);
-                        }
-                        doc.open();
+
+                        raw = { title, text };
+                        await cacheSet(chKey, raw);
                     }
 
                     progress.inc();
-                    return mapper ? await mapper({ title, text }) : { title, text };
+                    return mapper ? await mapper({ ...raw }) : { ...raw };
                 } catch (e) {
                     ctrl.abort();
                     throw e;
