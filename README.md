@@ -1,34 +1,59 @@
 # ranobe-ebook-loader
-Юзерскрипт для скачивания книг (fb2, epub) c https://ранобэ.рф/ , https://ranobes.com/ , https://tl.rulate.ru/ , https://jaomix.ru/
 
-![icon from https://icon-icons.com/icon/book-shelf-book/54414](https://raw.githubusercontent.com/Taraflex/ranobe-ebook-loader/master/icons/128.png)
+Юзерскрипт для скачивания книг (fb2, epub) c https://ranobes.com/ , https://ранобэ.рф/ , https://tl.rulate.ru/ , https://jaomix.ru/
+
+> **Это форк** [оригинала Taraflex](https://github.com/Taraflex/ranobe-ebook-loader) с починкой под новую защиту и вёрстку ranobes.com (2025-2026). Оригинал перестал работать; здесь восстановлена работоспособность и добавлена докачка/автопродолжение. Лицензия MIT, авторство оригинала сохранено.
+
+![icon from https://icon-icons.com/icon/book-shelf-book/54414](https://raw.githubusercontent.com/TheNeatDarkLord/ranobe-ebook-loader/master/icons/128.png)
 
 [Поддержка браузерами](https://caniuse.com/#feat=abortcontroller)
 
-О проблемах в работе скрипта сообщать [тут](https://github.com/Taraflex/ranobe-ebook-loader/issues).
+О проблемах в работе скрипта сообщать [тут](https://github.com/TheNeatDarkLord/ranobe-ebook-loader/issues).
 
 ## Как использовать
 
-- Установить расширение 
-    > [Violentmonkey](https://violentmonkey.github.io/get-it/) 
+- Установить расширение
+    > [Violentmonkey](https://violentmonkey.github.io/get-it/)
     Рекомендуемый вариант, так как разрешает кроссдоменные запросы для скачивания иллюстраций
 
-    или 
-    > [Tampermonkey](https://tampermonkey.net/) 
+    или
+    > [Tampermonkey](https://tampermonkey.net/)
     Будет спрашивать разрешение для скачивания иллюстраций со сторонних хостов
-    
-    или 
-    > [Greasemonkey](https://www.greasespot.net/) 
-    
-    или 
-    > ~~[FireMonkey](https://addons.mozilla.org/ru/firefox/addon/firemonkey/)~~ пока не поддерживается
-   
+
+    или
+    > [Greasemonkey](https://www.greasespot.net/)
+
     или любое другое для поддержки юзерскриптов в вашем браузере.
 
-- [Нажать для установки юзерскрипта](https://raw.githubusercontent.com/Taraflex/ranobe-ebook-loader/master/build/ranobe-ebook-loader.user.js)
-- Перейти на страницу с книгой и дождаться её прогрузки
-- На странице появятся кнопки для скачивания книг (в Firefox кнопки также доступны через контекстное меню страницы)
-![](https://raw.githubusercontent.com/Taraflex/ranobe-ebook-loader/master/screenshots/rulate.png)
-![](https://raw.githubusercontent.com/Taraflex/ranobe-ebook-loader/master/screenshots/ranobe.png)
-![](https://raw.githubusercontent.com/Taraflex/ranobe-ebook-loader/master/screenshots/ranobes.png)
-- Так же epub можно скачать, нажав <kbd>CTRL</kbd>+<kbd>S</kbd>
+- [**Нажать для установки юзерскрипта**](https://raw.githubusercontent.com/TheNeatDarkLord/ranobe-ebook-loader/master/build/ranobe-ebook-loader.user.js)
+- Перейти на страницу с книгой (например `ranobes.com/ranobe/...`) и дождаться её прогрузки. Если появится проверка Cloudflare / «Я не робот» — пройти её.
+- В блоке рейтинга появятся кнопки **«Скачать *.FB2»** и **«Скачать *.EPUB»**. Нажать нужную **один раз** и дождаться шкалы с процентами.
+- Так же epub можно скачать, нажав <kbd>CTRL</kbd>+<kbd>S</kbd>.
+
+## ⚠️ Важно про антибот ranobes.com
+
+Сайт ограничивает массовую фоновую загрузку: примерно **~30 запросов на одно прохождение проверки**, дальше временно блокирует (это лимит по числу запросов, а не по скорости; ожидание блок не снимает — нужно заново пройти проверку).
+
+- **Короткие новеллы (до ~30 глав)** скачиваются за один клик.
+- **Большие книги** качаются заходами: при блокировке скрипт сам сохраняет прогресс, перезагружает страницу и продолжает с места. Когда появляется «Я не робот» — проходите её **один раз** рукой, дальше скрипт продолжает сам. Уже скачанные главы не теряются и повторно не качаются.
+- Если попыток было много подряд — IP временно банится; тогда подождите 20-30 минут, не заходя на сайт.
+
+## Что исправлено и добавлено в этом форке
+
+- **Адаптация под новую вёрстку ranobes.com** — сайт убрал микроразметку (`itemprop`), из-за чего скрипт падал с `Cannot read properties of null`. Метаданные (обложка, автор, жанры, описание, год) теперь берутся из актуальных селекторов и Open Graph.
+- **Исправлены пустые книги** — главы сохранялись только с заголовком, без текста (шаблоны читали поле `data`, а главы хранят текст в `text`). Теперь тело глав сохраняется в FB2 и EPUB.
+- **Обход антибота** — главы грузятся последовательно с человеческой паузой (вместо 5 параллельных запросов, которые сразу триггерили защиту).
+- **Детект блокировок** — распознаются страницы-заглушки Cloudflare и «Антибот»; вместо краша/пустого файла показывается понятное сообщение, а пустые (soft-blocked) главы перезапрашиваются.
+- **Докачка с места обрыва** — скачанные главы и оглавление кэшируются в IndexedDB; повторный запуск продолжает, а не начинает заново.
+- **Автопродолжение** — при блокировке скрипт сохраняет прогресс, перезагружает страницу и сам продолжает скачивание после прохождения проверки.
+- **Видимая шкала прогресса** — исправлен краш при монтировании (`appendChild` на `null`), из-за которого не появлялась полоса загрузки.
+- **Поддержка зеркал** `ranobes.top` и `ranobes.net` в дополнение к `ranobes.com`.
+
+## Сборка из исходников
+
+```bash
+npm install
+npm run build   # генерирует build/ranobe-ebook-loader.user.js
+```
+
+Стек: TypeScript + Svelte 3 + Pug, сборка Rollup в один userscript.
