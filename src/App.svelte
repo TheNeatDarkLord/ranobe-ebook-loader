@@ -93,17 +93,9 @@
                 await new Promise(tm);
             }
         } else {
-            // Автодокачка: если попали на страницу антибота — пробуем пройти её сами (нажать «Я не робот»).
-            if (getResume()) {
-                for (let i = 0; i < 12 && !c.signal.aborted; i++) {
-                    if (Loader.injectTarget) break;
-                    const btn = Array.from(document.querySelectorAll('button, a, input')).find((b: any) => /я\s*не\s*робот/i.test(b.textContent || b.value || ''));
-                    if (btn) { (btn as HTMLElement).click(); return; }
-                    await new Promise(r => setTimeout(r, 1000));
-                }
-            }
             injectTarget = await Loader.injectTarget;
-            // ...и если есть незавершённая докачка этой книги — продолжаем автоматически.
+            // Автодокачка: продолжаем СКАЧИВАНИЕ только если открыта НАСТОЯЩАЯ страница книги.
+            // Страницу антибота не трогаем — капчу проходит человек (автоклик ломал проверку).
             const r = getResume();
             if (injectTarget && r && r.url === location.href) {
                 await tick();
