@@ -78,8 +78,9 @@ export class Ranobes extends Base {
                     let raw = await cacheGet<Chapter>(chKey);
 
                     if (!raw) {
-                        // Пауза ~1.5с между РЕАЛЬНЫМИ запросами: на меньшей паузе сайт включает антибот.
-                        await delay(1500, ctrl.signal);
+                        // Случайная пауза ~2-3.5с между РЕАЛЬНЫМИ запросами: ровный интервал сам по себе
+                        // выглядит ботом, поэтому добавляем человеческий разброс (плюс снижает нагрузку на антибот).
+                        await delay(2000 + Math.floor(Math.random() * 1500), ctrl.signal);
 
                         let text = '';
                         let title = '';
