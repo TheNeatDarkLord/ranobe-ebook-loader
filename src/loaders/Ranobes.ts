@@ -75,7 +75,12 @@ export class Ranobes extends Base {
                     const pages = [url];
 
                     for (const page of pages) {
-                        const doc = await loadDom(page, ctrl.signal);
+                        // Валидируем, что #arrticle реально с контентом — иначе антибот мог отдать
+                        // пустую оболочку, и loadDom повторит запрос (а не сохранит пустую главу).
+                        const doc = await loadDom(page, ctrl.signal, 'GET', undefined, d => {
+                            const a = d.getElementById('arrticle');
+                            return !!a && (a.children.length > 0 || !!a.textContent.trim());
+                        });
                         if (!doc) break;
                         const content = doc.getElementById('arrticle');
                         if (!content) {

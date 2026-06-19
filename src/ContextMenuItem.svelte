@@ -1,11 +1,11 @@
 <script lang="ts" context="module">
     function inject(node: HTMLElement, parent: HTMLElement) {
-        parent.appendChild(node);
+        parent?.appendChild(node);
         return {
             update(newParent: HTMLElement) {
                 if (newParent != parent) {
                     parent = newParent;
-                    parent.appendChild(node);
+                    parent?.appendChild(node);
                 }
             },
             destroy() {

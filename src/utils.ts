@@ -82,7 +82,7 @@ function isBotWall(resp: Response, text: string) {
     return resp.headers.get('cf-mitigated') === 'challenge' || BOT_WALL.test(text);
 }
 
-export async function loadDom(url: string, signal: AbortSignal, method = 'GET', body?: any) {
+export async function loadDom(url: string, signal: AbortSignal, method = 'GET', body?: any, validate?: (doc: Document) => boolean) {
     for (let attempt = 0; ; ++attempt) {
         const resp = await fetch(url, {
             method,
@@ -99,7 +99,12 @@ export async function loadDom(url: string, signal: AbortSignal, method = 'GET', 
         }
         const text = await resp.text();
         if (!isBotWall(resp, text)) {
-            return parse(text);
+            const doc = parse(text);
+            // Иногда антибот отдаёт «пустую» страницу (оболочка без контента) со статусом 200 —
+            // validate отсеивает такие ответы, чтобы не сохранить пустую главу.
+            if (!validate || validate(doc)) {
+                return doc;
+            }
         }
         // Нарвались на антибот/Cloudflare — ждём и пробуем снова (адаптивный троттлинг).
         if (attempt >= 5) {
@@ -421,12 +426,12 @@ function dropAttrs(e: HTMLElement) {
 }
 
 export function inject(node: HTMLElement, parent: HTMLElement) {
-    parent.appendChild(node);
+    parent?.appendChild(node);
     return {
         update(newParent: HTMLElement) {
             if (newParent != parent) {
                 parent = newParent;
-                parent.appendChild(node);
+                parent?.appendChild(node);
             }
         },
         destroy() {
