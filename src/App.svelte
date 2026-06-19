@@ -33,9 +33,16 @@
     import { zip } from './zip';
     import { progress, notifications } from './stores';
     import { sha256 } from './string-utils';
+    import { cacheCount } from './cache';
 
     const MENU_TITLE_FB2 = 'Скачать *.fb2';
     const MENU_TITLE_EPUB = 'Скачать *.epub';
+
+    // Автодокачка: при блоке антиботом перезагружаем страницу и продолжаем с места.
+    const RESUME_KEY = 'reb-autoresume';
+    const getResume = (): any => { try { return JSON.parse(sessionStorage.getItem(RESUME_KEY)) || null; } catch { return null; } };
+    const setResume = (v: any) => { try { sessionStorage.setItem(RESUME_KEY, JSON.stringify(v)); } catch {} };
+    const clearResume = () => { try { sessionStorage.removeItem(RESUME_KEY); } catch {} };
     const Loader = {
         'ранобэ.рф': Ranobe,
         'xn--80ac9aeh6f.xn--p1ai': Ranobe,
@@ -61,6 +68,12 @@
         progress.clear();
     }
 
+    // Ручная отмена пользователем — глушим и автодокачку.
+    function cancel() {
+        clearResume();
+        abort();
+    }
+
     const c = new AbortController();
 
     onMount(async () => {
@@ -80,7 +93,22 @@
                 await new Promise(tm);
             }
         } else {
+            // Автодокачка: если попали на страницу антибота — пробуем пройти её сами (нажать «Я не робот»).
+            if (getResume()) {
+                for (let i = 0; i < 12 && !c.signal.aborted; i++) {
+                    if (Loader.injectTarget) break;
+                    const btn = Array.from(document.querySelectorAll('button, a, input')).find((b: any) => /я\s*не\s*робот/i.test(b.textContent || b.value || ''));
+                    if (btn) { (btn as HTMLElement).click(); return; }
+                    await new Promise(r => setTimeout(r, 1000));
+                }
+            }
             injectTarget = await Loader.injectTarget;
+            // ...и если есть незавершённая докачка этой книги — продолжаем автоматически.
+            const r = getResume();
+            if (injectTarget && r && r.url === location.href) {
+                await tick();
+                loadBook(r.format === 'epub' ? formats.EPUB : formats.FB2);
+            }
         }
     });
 
@@ -98,6 +126,7 @@
 
     async function loadBook(format: EbookFormat) {
         if (loading || !injectTarget) return;
+        let loader: Base;
         try {
             abort();
             loading = true;
@@ -115,7 +144,7 @@
                 return part;
             };
 
-            const loader: Base = new Loader();
+            loader = new Loader();
             const chapters = await loader.parts(ctrl, attaches, format === formats.EPUB ? epubTransform : null);
 
             switch (format) {
@@ -145,6 +174,7 @@
                     attaches.clear();
 
                     const epubMime = 'application/epub+zip';
+                    clearResume();
                     return saveAs(
                         new Blob(
                             Array.from(
@@ -188,6 +218,7 @@
                     }
                     attaches.clear();
                     blobParts.push('</FictionBook>');
+                    clearResume();
                     return saveAs(
                         new Blob(blobParts, {
                             type: 'application/x-fictionbook+xml;charset=utf-8',
@@ -196,7 +227,22 @@
                     );
             }
         } catch (e) {
-            if (e?.name != 'AbortError') {
+            if (e?.name === 'BotWallError' && loader?.bookAlias) {
+                // Автодокачка: сохраняем прогресс, перезагружаем и продолжаем сами.
+                const done = await cacheCount(`${loader.bookAlias}::https`);
+                const prev = getResume();
+                // если за прошлый заход не прибавилось глав — считаем "застряли"
+                const stall = (prev && prev.url === location.href && done <= (prev.done || 0)) ? (prev.stall || 0) + 1 : 0;
+                if (stall < 4) {
+                    setResume({ url: location.href, format: format === formats.EPUB ? 'epub' : 'fb2', done, stall });
+                    notifications.add(`Антибот заблокировал. Скачано глав: ${done}.\nПерезагружаю и продолжаю автоматически…\nЕсли появится «Я не робот» — пройдите его (дальше всё само).`);
+                    setTimeout(() => location.reload(), 4000);
+                    return;
+                }
+                // 4 захода без прогресса — IP, видимо, в бане; останавливаемся.
+                clearResume();
+                notifications.add({ name: 'BotWallError', message: `Скачано глав: ${done}. Сайт держит блокировку.\nПодождите 20-30 минут не заходя на сайт, затем снова нажмите «Скачать» — докачка продолжится с этого места.` });
+            } else if (e?.name != 'AbortError') {
                 console.error(e);
                 notifications.add(e);
             }
@@ -216,7 +262,7 @@
 </style>
 
 {#if loading}
-    <Preloader on:cancel={abort} color={Loader.color} />
+    <Preloader on:cancel={cancel} color={Loader.color} />
 {:else if injectTarget}
     <Window on:save={loadEPUB} />
     <ContextMenu>

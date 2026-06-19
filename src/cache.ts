@@ -46,6 +46,29 @@ export async function cacheSet(key: string, value: any): Promise<void> {
     }
 }
 
+// Сколько ключей с заданным префиксом в кэше (для оценки прогресса докачки).
+export async function cacheCount(prefix: string): Promise<number> {
+    try {
+        const s = await store('readonly');
+        return await new Promise(resolve => {
+            let n = 0;
+            const r = s.openCursor();
+            r.onsuccess = () => {
+                const c = r.result;
+                if (c) {
+                    if (String(c.key).startsWith(prefix)) n++;
+                    c.continue();
+                } else {
+                    resolve(n);
+                }
+            };
+            r.onerror = () => resolve(n);
+        });
+    } catch {
+        return 0;
+    }
+}
+
 // Удалить все ключи с заданным префиксом (например, всё по одной книге).
 export async function cacheClearPrefix(prefix: string): Promise<void> {
     try {
